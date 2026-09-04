@@ -42,8 +42,8 @@ BULK_ROOT = "bulk/"
 
 TRANSPORT_URN = "urn:x-nmos:transport:"
 VALID_TRANSPORTS = {
-    "v1.0": ["rtp"],
-    "v1.1": ["rtp", "mqtt", "websocket"]
+    "v1.0": ["rtp", "mxl"],
+    "v1.1": ["rtp", "mxl", "mqtt", "websocket"]
 }
 
 

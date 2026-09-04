@@ -1,0 +1,28 @@
+# Installs what's needed to run testCM.py's MXL-only test classes
+# (TestMxlSenderBackend/TestMxlReceiverBackend) locally, using the
+# tests/stubs/ fake nmoscommon.logger - see
+# tests/stubs/nmoscommon/logger.py's own comment for why a stub exists at
+# all and its (deliberate, opt-in only) sys.path caveat.
+#
+#   pip install -r tests/requirements.txt
+#   cd tests
+#   PYTHONPATH=stubs:.. python3 -m unittest \
+#       testCM.TestMxlSenderBackend testCM.TestMxlReceiverBackend -v
+#
+# Unpinned to match setup.py's own install_requires (no version pins
+# there either).
+jsonschema
+six
+
+# Used by tox.ini's own [testenv] commands (coverage run/annotate/report);
+# not required for the plain unittest invocation above.
+coverage
+mock
+
+# NOT included: nmoscommon (and its own old werkzeug/flask/etc pins) -
+# needed for the rest of this directory's test modules (testRoutes.py,
+# testRtpReceiver.py, testSdpManager.py, ...) and for nmosconnection's
+# own nmosDriver.py/api.py/service.py, but out of scope here since it
+# can't just be `pip install`'d against a modern Python/Werkzeug without
+# conflicts - see install.sh's own top-of-file comment for the real
+# dependency chain and why it lives in a dedicated venv instead.

@@ -1,0 +1,44 @@
+[Unit]
+Description=NMOS Device Connection Management (IS-05 reference implementation)
+Wants=network-online.target
+After=network.target network-online.target
+
+[Service]
+Restart=always
+RestartSec=3
+# Static, fixed-id mxl senders bootstrapped at startup from this file -
+# see dcMxlDriver.py's DC_MXL_SENDERS_CONFIG_ENV, and
+# make-mxl-config.py's own --nmos-senders-config flag, which writes/keeps
+# it in sync. A missing file is not an error - just no static senders
+# pre-created that run.
+Environment=DC_MXL_SENDERS_CONFIG=/etc/nmos-connection/senders.json
+# Static, fixed-id mxl receivers bootstrapped at startup from this file -
+# pure topology (which local dcstranscode input each receiver feeds,
+# which remote NMOS endpoint(s) it might pull from), hand-provisioned by
+# the operator (no make-mxl-config.py flag generates this one - a
+# receiver's own mxl_domain_id/mxl_flow_id only ever arrive via a real
+# PATCH). See dcMxlDriver.py's own DC_MXL_RECEIVERS_CONFIG_ENV comment
+# for the exact shape.
+Environment=DC_MXL_RECEIVERS_CONFIG=/etc/nmos-connection/receivers.json
+# Where a receiver activation's automatic mxl-fabrics-proxy subscription
+# sync (dcMxlDriver.py's _onReceiverActivated()) reads/writes, and its
+# admin API for POST /v1/reload - all optional. DC_MXL_FABRICS_PROXY_CONFIG
+# isn't needed in the normal case: the real path is discovered directly
+# from the running mxl-fabrics-proxy container via `docker inspect`
+# (matching its own --config arg against the bind mount that covers it),
+# so it stays correct without this needing to be kept in sync by hand -
+# only set it to force a specific path (e.g. discovery isn't possible,
+# or the container is named something other than DC_MXL_FABRICS_PROXY_CONTAINER's
+# default). Shown here only to document the defaults already baked into
+# dcMxlDriver.py, uncomment to override.
+#Environment=DC_MXL_FABRICS_PROXY_CONFIG=/opt/dreamcatcher/share/mxl/mxl-fabrics-proxy-config.yaml
+#Environment=DC_MXL_FABRICS_PROXY_ADMIN_URL=http://localhost:2283
+#Environment=DC_MXL_FABRICS_PROXY_CONTAINER=mxl-fabrics-proxy
+# Runs against the venv set up by install.sh (--system-site-packages, so
+# it still sees this package's own nmosconnection module) - its Python
+# deps aren't installable directly against the system Python, see
+# install.sh's own top-of-file comment for the full story.
+ExecStart=/opt/dreamcatcher/venv/nmos-connection-management/bin/python3 /usr/bin/connectionmanagement
+
+[Install]
+WantedBy=multi-user.target

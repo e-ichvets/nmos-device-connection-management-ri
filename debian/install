@@ -1,2 +1,4 @@
 share/ipp-connectionmanagement usr/share
+bin/connectionmanagement usr/bin
+nmosconnection usr/lib/python3/dist-packages
 

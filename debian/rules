@@ -1,0 +1,17 @@
+#!/usr/bin/make -f
+%:
+	dh $@
+
+# This repo has its own top-level Makefile for building/testing/packaging
+# via a completely different toolchain (stdeb/py2dsc/tox) - dh_auto_*
+# auto-detects it and tries to drive the build through it (`make`, then
+# `make test` needing tox, which isn't installed). None of that applies
+# here: this package is just a plain file copy via debian/install below,
+# handled by dh_install (a separate step, unaffected by these overrides).
+override_dh_auto_configure:
+
+override_dh_auto_build:
+
+override_dh_auto_test:
+
+override_dh_auto_install:

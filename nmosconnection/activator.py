@@ -104,8 +104,8 @@ class Activator:
         """Get the current time as an NMOS timestamp"""
         now = time.time()
         secs = int(now)
-        nanos = (now - secs) * 1e9
-        return ipptimestamp.Timestamp.from_utc(secs, nanos)
+        nanos = int((now - secs) * 1e9)
+        return ipptimestamp.Timestamp(secs, nanos)
 
     def _scheduleImmediate(self):
         """Schedule an activation ASAP"""

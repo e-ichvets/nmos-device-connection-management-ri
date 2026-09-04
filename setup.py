@@ -53,7 +53,8 @@ packages_required = [
     "nmoscommon>=0.20.0",
     "six",
     "nodefacade>=0.10.1",
-    "werkzeug>=0.14.1,<1.0.0"  # Echo pin from nmos-common to avoid Flask overriding it
+    "werkzeug>=0.14.1,<1.0.0",  # Echo pin from nmos-common to avoid Flask overriding it
+    "pyyaml"  # dcMxlDriver.py's own in-process mxl-fabrics-proxy-config.yaml editing
 ]
 
 setup(

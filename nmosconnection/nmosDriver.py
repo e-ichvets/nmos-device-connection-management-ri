@@ -21,7 +21,6 @@
 
 from __future__ import absolute_import
 
-import netifaces
 import random
 from nmoscommon.httpserver import HttpServer
 from nmoscommon.webapi import WebAPI, route, basic_route
@@ -30,6 +29,8 @@ from flask import send_from_directory, send_file, request, abort
 from .rtpSender import RtpSender
 from .rtpReceiver import RtpReceiver
 from uuid import uuid4
+from .activationController import activationController
+from .dcMxlDriver import DcMxlDriver
 from .sdpManager import SdpManager
 from .sdpFactory import senderFileFactory
 from .facadeWrapper import SimpleFacadeWrapper
@@ -79,7 +80,10 @@ class NmosDriverWebApi(WebAPI):
         self.flows = {}  # Flows indexed by sender using them
         self.deviceId = str(uuid4())
         self.facadeWrapper = SimpleFacadeWrapper(facade, self.deviceId)
+        self.mxlDriver = DcMxlDriver(logger, manager, self.facadeWrapper, self.addSenderToIS04)
         self.addControl()
+        self.mxlDriver.bootstrapStaticSenders()
+        self.mxlDriver.bootstrapStaticReceivers()
 
     @basic_route('/')
     def __index(self, path='static/index.html'):
@@ -109,11 +113,15 @@ class NmosDriverWebApi(WebAPI):
             try:
                 data = request.get_json()
                 legs = int(data['legs'])
-                rtcp = data['rtcp']
-                fec = data['fec']
+                transport = data.get('transport', 'rtp')
+                if transport == 'mxl':
+                    uuid = self.mxlDriver.addSender(legs)
+                else:
+                    rtcp = data['rtcp']
+                    fec = data['fec']
+                    uuid = self.addSender(legs, rtcp, fec)
             except KeyError:
                 return abort(400)
-            uuid = self.addSender(legs, rtcp, fec)
             self.senders[uuid] = data
             return {"uuid": uuid}
 
@@ -136,11 +144,15 @@ class NmosDriverWebApi(WebAPI):
             try:
                 data = request.get_json()
                 legs = int(data['legs'])
-                rtcp = data['rtcp']
-                fec = data['fec']
+                transport = data.get('transport', 'rtp')
+                if transport == 'mxl':
+                    uuid = self.mxlDriver.addReceiver(legs)
+                else:
+                    rtcp = data['rtcp']
+                    fec = data['fec']
+                    uuid = self.addReceiver(legs, rtcp, fec)
             except KeyError:
                 return abort(400)
-            uuid = self.addReceiver(legs, rtcp, fec)
             self.receivers[uuid] = data
             return {"uuid": uuid}
         elif request.method == 'DELETE':
@@ -170,7 +182,7 @@ class NmosDriverWebApi(WebAPI):
 
     def addSender(self, legs, rtcp, fec):
         senderId = str(uuid4())
-        self.addSenderToIS04(senderId)
+        self.addSenderToIS04(senderId, "urn:x-nmos:transport:rtp")
         self.addSenderToIS05(legs, rtcp, fec, senderId)
         return senderId
 
@@ -193,7 +205,7 @@ class NmosDriverWebApi(WebAPI):
         # Add the sender to the IS-05 API
         self.manager.addSender(sender, senderId)
 
-    def addSenderToIS04(self, senderId):
+    def addSenderToIS04(self, senderId, transport="urn:x-nmos:transport:rtp"):
         # Senders need a flow, and flows need sources...
         flowId = str(uuid4())
         sourceId = str(uuid4())
@@ -202,7 +214,7 @@ class NmosDriverWebApi(WebAPI):
         self.facadeWrapper.registerFlow(flowId, sourceId)
         self.flows[senderId] = flowId
         # Now we can finally make our sender
-        self.facadeWrapper.registerSender(senderId, flowId)
+        self.facadeWrapper.registerSender(senderId, flowId, transport)
 
     def delSender(self, senderId):
         # Remove the sender from IS-04 and IS-05, along with sources and flows
@@ -236,25 +248,6 @@ class NmosDriverWebApi(WebAPI):
         self.manager.removeReceiver(receiverId)
         self.facadeWrapper.delReceiver(receiverId)
 
-    def getAvailableInterfaces(self):
-        # Discover network interfaces available on the machine
-        # uses the netifaces library to do heavy lifting...
-        addressList = []
-        interfaces = netifaces.interfaces()
-        for interface in interfaces:
-            addresses = netifaces.ifaddresses(interface)
-            try:
-                for address in addresses[netifaces.AF_INET]:
-                    # Get all the IPV4 addresses presented on this interface
-                    addressList.append(address['addr'])
-                for address in addresses[netifaces.AF_INET6]:
-                    # Get all the IPV6 addresses presented on this interface
-                    addressList.append(address['addr'])
-            except KeyError:
-                # It's okay, you don't have to have both
-                pass
-        return addressList
-
     def destinationSelector(self, params, leg):
         return self.generateRandomMulticast()
 
@@ -278,19 +271,3 @@ class NmosDriverWebApi(WebAPI):
             number = random.uniform(1, 254)
             toReturn = toReturn + str(int(number))
         return toReturn
-
-
-class activationController:
-
-    def __init__(self, portId, port, facadeWrapper, fileFactory=None):
-        self.portId = portId
-        self.port = port
-        self.facadeWrapper = facadeWrapper
-        self.fileFactory = fileFactory
-
-    def activateSender(self):
-        self.fileFactory.activateCallback()
-        self.facadeWrapper.updateSender(self.portId)
-
-    def activateReceiver(self):
-        self.facadeWrapper.updateReceiver(self.portId)

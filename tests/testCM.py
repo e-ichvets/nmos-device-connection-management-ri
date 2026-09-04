@@ -21,6 +21,8 @@ from nmoscommon.logger import Logger
 
 from nmosconnection.abstractDevice import StagedLockedException
 from nmosconnection.rtpSender import RtpSender
+from nmosconnection.mxlSender import MxlSender
+from nmosconnection.mxlReceiver import MxlReceiver
 
 API_WS_PORT = 8856
 SENDER_WS_PORT = 8857
@@ -348,3 +350,155 @@ class TestRtpSenderBackend(unittest.TestCase):
         expected = 5004
         actual = self.dut._resolveSourcePort({}, 0)
         self.assertEqual(expected, actual)
+
+
+class TestMxlSenderBackend(unittest.TestCase):
+    """Test the MXL sender backend"""
+
+    def setUp(self):
+        self.logger = Logger("Connection Management Tests")
+        self.dut = MxlSender(self.logger, 2)
+        self.dut.schemaPath = "../share/ipp-connectionmanagement/schemas/"
+        self.maxDiff = None
+
+    def test_get_transport_type(self):
+        """getTransportType() must produce the 'mxl' part of
+        urn:x-nmos:transport:mxl"""
+        self.assertEqual(self.dut.getTransportType(), "mxl")
+
+    def test_get_params_schema_loads(self):
+        """The per-leg schema file must load and describe an array of
+        objects with the expected mxl-specific properties"""
+        schema = self.dut.getParamsSchema(0)
+        self.assertEqual(schema['type'], "array")
+        properties = schema['items']['properties']
+        for key in ["mxl_domain_id", "mxl_flow_id"]:
+            self.assertIn(key, properties)
+        # RTP-only concerns must not have leaked into the mxl schema
+        for key in ["destination_ip", "destination_port", "fec_enabled", "rtcp_enabled"]:
+            self.assertNotIn(key, properties)
+
+    def test_resolve_parameters_is_a_passthrough(self):
+        """mxl_domain_id/mxl_flow_id identify a specific local domain/flow
+        and are never "auto" - nothing to resolve"""
+        self.dut.setStagedParameter("/dev/shm/mxl", "mxl_domain_id", leg=0)
+        self.dut.setStagedParameter(
+            "5fbec3b1-1b0f-417d-9059-8b94a47197ed", "mxl_flow_id", leg=0
+        )
+        resolved = self.dut.resolveParameters(copy.deepcopy(self.dut.staged))
+        self.assertEqual(resolved[__tp__][0]['mxl_domain_id'], "/dev/shm/mxl")
+        self.assertEqual(
+            resolved[__tp__][0]['mxl_flow_id'], "5fbec3b1-1b0f-417d-9059-8b94a47197ed"
+        )
+
+    def test_get_constraints_does_not_crash(self):
+        """getConstraints() must run without raising"""
+        self.dut.getConstraints()
+
+    def test_static_config_prestaging_comes_up_active(self):
+        """Mirrors dcMxlDriver.py's DcMxlDriver.addSenderToIS05()
+        transportParams pre-staging loop (used by its DC_MXL_SENDERS_CONFIG
+        bootstrap) - NmosDriverWebApi itself isn't constructed here since
+        it needs nmoscommon's Flask-based WebAPI base class, out of scope
+        for this unit test; this exercises the same setStagedParameter
+        loop."""
+        transport_params = [
+            {"mxl_domain_id": "/dev/shm/mxl", "mxl_flow_id": "5fbec3b1-1b0f-417d-9059-8b94a47197ed"}
+        ]
+        for leg, leg_params in enumerate(transport_params):
+            for key, value in leg_params.items():
+                self.dut.setStagedParameter(value, key, leg=leg)
+        self.dut.activateStaged()
+        active = self.dut.activeToJson()
+        self.assertEqual(active[__tp__][0]['mxl_domain_id'], "/dev/shm/mxl")
+        self.assertEqual(active[__tp__][0]['mxl_flow_id'], "5fbec3b1-1b0f-417d-9059-8b94a47197ed")
+
+
+class TestMxlReceiverBackend(unittest.TestCase):
+    """Test the MXL receiver backend"""
+
+    def setUp(self):
+        self.logger = Logger("Connection Management Tests")
+        self.dut = MxlReceiver(self.logger, 2)
+        self.dut.schemaPath = "../share/ipp-connectionmanagement/schemas/"
+        self.maxDiff = None
+
+    def test_get_transport_type(self):
+        """getTransportType() must produce the 'mxl' part of
+        urn:x-nmos:transport:mxl"""
+        self.assertEqual(self.dut.getTransportType(), "mxl")
+
+    def test_get_params_schema_loads(self):
+        """The per-leg schema file must load and describe an array of
+        objects with the expected mxl-specific properties"""
+        schema = self.dut.getParamsSchema(0)
+        self.assertEqual(schema['type'], "array")
+        properties = schema['items']['properties']
+        for key in ["mxl_domain_id", "mxl_flow_id"]:
+            self.assertIn(key, properties)
+        # RTP-only concerns must not have leaked into the mxl schema
+        for key in ["multicast_ip", "interface_ip", "fec_enabled", "rtcp_enabled"]:
+            self.assertNotIn(key, properties)
+
+    def test_transport_managers_satisfy_activator_contract(self):
+        """ConnectionManagementAPI.addReceiver() unconditionally reads
+        receiver.transportManagers[leg] and requires lock()/unLock()/
+        activateStaged() on every activator target"""
+        self.assertEqual(len(self.dut.transportManagers), 2)
+        for target in list(self.dut.transportManagers) + [self.dut]:
+            self.assertTrue(hasattr(target, 'lock'))
+            self.assertTrue(hasattr(target, 'unLock'))
+            self.assertTrue(hasattr(target, 'activateStaged'))
+
+    def test_transport_manager_reports_null_transport_file(self):
+        """MXL receivers have no SDP-equivalent manifest to ingest - both
+        staged and active transport_file must report null/null, per IS-05's
+        own allowance for that when no transport file applies"""
+        manager = self.dut.transportManagers[0]
+        self.assertEqual(manager.getStagedRequest(), {"data": None, "type": None})
+        self.assertEqual(manager.getActiveRequest(), {"data": None, "type": None})
+
+    def test_transport_manager_update_does_not_raise(self):
+        """PATCHing a transport_file onto an MXL receiver is a no-op, not
+        an error"""
+        manager = self.dut.transportManagers[0]
+        manager.update({"data": None, "type": None})
+
+    def test_resolve_parameters_is_a_passthrough(self):
+        """MXL receiver params (mxl_domain_id/mxl_flow_id) identify a
+        specific remote sender and are never "auto" - nothing to
+        resolve"""
+        self.dut.setStagedParameter("/dev/shm/mxl", "mxl_domain_id", leg=0)
+        self.dut.setStagedParameter(
+            "5fbec3b1-1b0f-417d-9059-8b94a47197ed", "mxl_flow_id", leg=0
+        )
+        resolved = self.dut.resolveParameters(copy.deepcopy(self.dut.staged))
+        self.assertEqual(resolved[__tp__][0]['mxl_domain_id'], "/dev/shm/mxl")
+        self.assertEqual(
+            resolved[__tp__][0]['mxl_flow_id'], "5fbec3b1-1b0f-417d-9059-8b94a47197ed"
+        )
+
+    def test_active_to_json_omits_receiver_id(self):
+        """activeToJson()/_assembleJsonDescription() must strip the
+        internal receiver_id key, mirroring RtpReceiver"""
+        self.dut.activateStaged()
+        active = self.dut.activeToJson()
+        self.assertNotIn("receiver_id", active)
+
+    def test_static_config_prestaging_comes_up_active(self):
+        """Mirrors dcMxlDriver.py's DcMxlDriver.addReceiverToIS05()
+        transportParams pre-staging loop (used by its
+        DC_MXL_RECEIVERS_CONFIG bootstrap) - NmosDriverWebApi itself isn't
+        constructed here since it needs nmoscommon's Flask-based WebAPI
+        base class, out of scope for this unit test; this exercises the
+        same setStagedParameter loop."""
+        transport_params = [
+            {"mxl_domain_id": "/dev/shm/mxl", "mxl_flow_id": "5fbec3b1-1b0f-417d-9059-8b94a47197ed"}
+        ]
+        for leg, leg_params in enumerate(transport_params):
+            for key, value in leg_params.items():
+                self.dut.setStagedParameter(value, key, leg=leg)
+        self.dut.activateStaged()
+        active = self.dut.activeToJson()
+        self.assertEqual(active[__tp__][0]['mxl_domain_id'], "/dev/shm/mxl")
+        self.assertEqual(active[__tp__][0]['mxl_flow_id'], "5fbec3b1-1b0f-417d-9059-8b94a47197ed")

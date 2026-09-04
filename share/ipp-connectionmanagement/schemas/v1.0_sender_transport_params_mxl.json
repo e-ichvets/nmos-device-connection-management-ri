@@ -1,0 +1,51 @@
+{
+    "$schema": "http://json-schema.org/draft-04/schema#",
+    "type": "array",
+    "description": "Describes MXL Sender transport parameters, per AMWA BCP-007-03 (NMOS With MXL). The constraints in this schema are minimum constraints, but may be further constrained at the constraints endpoint.",
+    "title": "MXL Sender Transport Parameters",
+    "items": {
+        "type": "object",
+        "title": "Sender Output",
+        "additionalProperties": false,
+        "properties": {
+            "mxl_domain_id": {
+                "description": "MXL domain this flow is exposed under. Deviation from BCP-007-03: accepts any string, not just a UUID resolved via a domain_def.json - this DreamCatcher deployment uses the literal mxl-fabrics-proxy domain path (e.g. /dev/shm/mxl) directly.",
+                "anyOf": [
+                    {
+                        "type": "null"
+                    },
+                    {
+                        "type": "string"
+                    }
+                ]
+            },
+            "mxl_flow_id": {
+                "description": "MXL flow id (uuid) of the flow exposed by this sender",
+                "anyOf": [
+                    {
+                        "type": "null"
+                    },
+                    {
+                        "type": "string",
+                        "pattern": "^auto$"
+                    },
+                    {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-9a-f][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+                    }
+                ]
+            }
+        },
+        "patternProperties": {
+            "^ext_[a-zA-Z0-9_]+$": {
+                "type": [
+                    "string",
+                    "boolean",
+                    "null",
+                    "number"
+                ]
+            }
+        }
+    },
+    "maxItems": 2
+}

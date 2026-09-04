@@ -1,0 +1,249 @@
+nmos-device-connection-management (2.2.9+mxl1-9) unstable; urgency=low
+
+  * A PATCH clearing a receiver's mxl_domain_id/mxl_flow_id back to null
+    (removing a stream) is now handled as the reverse of the activation
+    sync: _onReceiverActivated() remembers the (endpoint, domain_id,
+    flow_id) each real activation last wired up, and a null-activation
+    unwinds it via the new _unsyncReceiver() - removes this flow's id
+    from its mxl-fabrics-proxy subscription entry (dropping the entry
+    entirely once none are left), reloads the proxy, unlinks this flow's
+    symlink from the input's flow config dir, and regenerates config.json
+    from whatever flows remain (or removes config.json entirely if no
+    video flow is left, matching mxl-dcstranscode-input.sh's own contract
+    of exiting when it's missing), then restarts dc-input. A redundant
+    null-activation (no prior synced flow to reverse) is a safe no-op,
+    same as before this change. The domain directory itself is never
+    removed - other flows may still be using it.
+  * _generateInputConfig() now polls (up to 5s) for this receiver's own
+    <mxl_domain_id>/<flow_id>.mxl-flow/flow_def.json to actually appear
+    before scanning for it - mxl-fabrics-proxy's /v1/reload response only
+    means it re-read its subscription config, not that it has already
+    established the subscription and pulled real grains from the remote
+    source, so the flow directory materializes asynchronously a short
+    while after reload() returns. Without this, input config regeneration
+    would spuriously fail with "no video flow found" on a race, even
+    though the flow shows up correctly moments later.
+  * mxl-fabrics-proxy's real config file path is now discovered directly
+    from the running container (`docker inspect <container>`, matching
+    its own --config <container-path> arg against the bind mount that
+    covers it) instead of assuming a fixed default - stays correct
+    without an env var needing to be kept in sync with however the
+    container actually happens to be started. DC_MXL_FABRICS_PROXY_CONFIG
+    is still an explicit override (checked first); DC_MXL_FABRICS_PROXY_CONTAINER
+    overrides the container name to inspect (default: mxl-fabrics-proxy).
+    Falls back to the old DEFAULT_FABRICS_PROXY_CONFIG path, with a
+    logged warning, if discovery fails for any reason (docker missing,
+    container not running, unexpected inspect output).
+  * _onReceiverActivated() now only considers a receiver's own endpoints
+    entries whose "protocol" is "mxl" (the first one found), instead of
+    blindly using endpoints[0] - a receiver whose endpoints list has no
+    "mxl" entry at all is warned and skipped, same as an empty list
+    already was.
+  * _syncReceiver() now creates this receiver's own mxl_domain_id
+    directory (mkdir -p, same as make-mxl-config.py's own
+    ensure_domain_exists()) before updating/reloading mxl-fabrics-proxy's
+    config - a brand new domain that's never been used before would
+    otherwise get referenced in domains:/subscriptions: before the
+    directory backing it actually exists.
+
+  * MXL transport_params redesigned to match the real AMWA BCP-007-03
+    ("NMOS With MXL") spec instead of an invented shape: the previous
+    per-leg source_ip/source_port/domain/flow_id/provider/mxl_enabled
+    fields are replaced with the spec's own mxl_domain_id/mxl_flow_id,
+    with one deliberate deviation - mxl_domain_id accepts any string
+    (not just a UUID resolved via a domain_def.json), so the literal
+    mxl-fabrics-proxy domain path (e.g. /dev/shm/mxl) can be used
+    directly. mxl_flow_id stays spec-strict (uuid, plus "auto" for
+    senders only).
+  * nmosDriver.py's addMxlSenderToIS05 no longer registers local
+    interfaces (getAvailableInterfaces() removed, along with its only
+    caller) - there is no source_ip field left for it to populate.
+  * DcMxlSender (added in -5) is removed - not needed for now.
+    addMxlSenderToIS05 goes back to plain MxlSender, so /active no
+    longer carries an ext_mxl_enabled field at all.
+  * Real MXL sender/receiver driver logic (static-config bootstrap,
+    on-demand POST /api/senders/ and /api/receivers/ creation) is
+    extracted out of nmosDriver.py's demo/mock RTP scaffolding into its
+    own DcMxlDriver class (nmosconnection/dcMxlDriver.py) - makes it
+    obvious which part of this codebase is real DreamCatcher logic vs
+    the BBC reference implementation's example driver. NmosDriverWebApi
+    now holds a DcMxlDriver instance instead of the mxl methods being
+    defined directly on it. activationController (shared by both the
+    RTP and MXL paths) moves to its own module
+    (nmosconnection/activationController.py) to avoid a circular import
+    between nmosDriver.py and dcMxlDriver.py.
+  * Fix addReceiverToIS05() calling activateStaged() before
+    facadeWrapper.registerReceiver() - activateStaged() fires the
+    activation callback synchronously on this first activation, which
+    (via activationController.activateReceiver()) calls
+    facadeWrapper.updateReceiver(), a KeyError unless
+    facadeWrapper.receivers[receiverId] already exists - which
+    registerReceiver() is what creates. Broke every mxl receiver's very
+    first activation (both the on-demand POST /api/receivers/ path and
+    the static-config bootstrap path) ever since the DcMxlDriver
+    extraction above reordered setActivateCallback()/activateStaged()
+    relative to the original nmosDriver.py code (which happened to avoid
+    this by accident - it called activateStaged() before
+    setActivateCallback(), so the callback was never actually wired up
+    yet the first time). registerReceiver() now runs before
+    activateStaged().
+  * DcMxlDriver now logs "DreamCatcher MXL driver running" on startup
+    (distinct from nmosDriver.py's pre-existing "Mock driver interface
+    running", which is just the demo admin API/HttpServer, not proof the
+    real mxl driver initialized), plus how many static senders/receivers
+    it actually bootstrapped from DC_MXL_SENDERS_CONFIG/
+    DC_MXL_RECEIVERS_CONFIG.
+  * Receivers get a fixed-id static bootstrap too:
+    DcMxlDriver.bootstrapStaticReceivers(), reading DC_MXL_RECEIVERS_CONFIG
+    at startup. Unlike senders, this file carries no mxl_domain_id/
+    mxl_flow_id at all - just topology (a JSON object mapping receiver
+    uuid -> {"input", "leg", "endpoints": [{"host","port","protocol"}]}):
+    which local dcstranscode input a receiver feeds, and which remote
+    NMOS endpoint(s) it might pull from. A receiver's actual
+    mxl_domain_id/mxl_flow_id only ever arrive later via a real PATCH,
+    same as any other receiver - hand-provisioned, not generated (no
+    make-mxl-config.py flag for it, unlike senders). The systemd unit now
+    also sets DC_MXL_RECEIVERS_CONFIG (default
+    /etc/nmos-connection/receivers.json).
+  * New: every successful MXL receiver activation with a real (non-null)
+    mxl_domain_id/mxl_flow_id - the initial bootstrap if pre-staged, or
+    (more commonly) any later PATCH .../receivers/<id>/staged - now
+    automatically, in a background thread so the PATCH response is never
+    delayed: (1) upserts that flow id into the matching mxl-fabrics-proxy
+    subscription entry (matched by source host, additive - doesn't touch
+    other sources' entries) in DC_MXL_FABRICS_PROXY_CONFIG (default
+    /opt/dreamcatcher/share/mxl/mxl-fabrics-proxy-config.yaml) - the
+    domains:/subscriptions: key used is derived from this receiver's own
+    mxl_domain_id (its basename, e.g. /dev/shm/mxl -> "mxl"), and both
+    the domains: entry and the subscriptions: entry for that key are
+    created if missing, without disturbing any other domain/source
+    already in the file, (2) POSTs DC_MXL_FABRICS_PROXY_ADMIN_URL +
+    /v1/reload (default http://localhost:2283), (3) regenerates this
+    receiver's input's own /etc/mxl/flows/input/<input>/config.json:
+    symlinks this activation's own flow into
+    /etc/mxl/flows/input/<input>/<mxl_flow_id> ->
+    <mxl_domain_id>/<mxl_flow_id>.mxl-flow/flow_def.json (same convention
+    make-mxl-config.py's own create_flow_symlinks() uses - accumulates
+    across separate video/audio/data receiver activations sharing the
+    same input, rather than being overwritten each time), then scans that
+    input dir's own flow-uuid symlinks (so a flow another receiver
+    already linked in stays included, config.json itself skipped by
+    name), classifies each by its own "format" field, and calls
+    /opt/dreamcatcher/sbin/make-mxl-config.py (full path - unlike
+    dc-input, which installs to /usr/sbin/ and is on a systemd service's
+    default PATH, make-mxl-config.py installs to /opt/dreamcatcher/sbin/,
+    which isn't) with the detected -v/-a/-d files and just the domain (no
+    mxl-flow-config-path argument -
+    make-mxl-config.py would unlink() each symlink just given to it
+    before resolve()-ing it to find its own target, breaking the very
+    path it was asked to read); the printed JSON is written to that
+    input's own config.json directly, and (4) runs
+    `dc-input restart <input>` for this receiver's configured input, so
+    it starts from that freshly regenerated config.
+    Each step is independent and best-effort - failures are logged, never
+    block/fail the activation. New dependency: PyYAML (added to
+    install.sh's venv setup and setup.py's install_requires).
+  * dcstranscode/scripts/make-mxl-config.py's --nmos-receivers-config is
+    removed - it was flow-descriptor-driven, which no longer matches
+    DC_MXL_RECEIVERS_CONFIG's new topology-only shape at all.
+  * dcstranscode/scripts/make-mxl-config.py's --nmos-senders-config now
+    emits mxl_domain_id/mxl_flow_id; the --source-ip/--source-port flags
+    added last revision are removed as obsolete under the new schema.
+  * DC_MXL_SENDERS_CONFIG's file format changes from a JSON array of
+    {"id", "legs", "transport_params"} entries to a JSON object mapping
+    sender uuid -> {"legs", "transport_params"} - make-mxl-config.py now
+    generates a real random sender id per flow instead of reusing the
+    flow's own id as the sender id, and keeps that sender id stable
+    across re-runs (looked up by the flow id already present in an
+    existing entry's transport_params) instead of only across service
+    restarts.
+
+ -- Evertz DreamCatcher <ichvets@evertz.com>  Thu, 03 Sep 2026 00:00:00 +0000
+
+nmos-device-connection-management (2.2.9+mxl1-8) unstable; urgency=low
+
+  * getAvailableInterfaces() now excludes loopback ("lo") - it was being
+    registered first (netifaces.interfaces() lists it first on Linux),
+    so defaultSourceSelector() picked 127.0.0.1 as source_ip's "auto"
+    resolution instead of a real, reachable data interface.
+
+ -- Evertz DreamCatcher <ichvets@evertz.com>  Wed, 02 Sep 2026 00:00:00 +0000
+
+nmos-device-connection-management (2.2.9+mxl1-7) unstable; urgency=low
+
+  * nmosDriver.py: bootstrap fixed-id, pre-staged, pre-activated mxl
+    senders from a static JSON config at startup (DC_MXL_SENDERS_CONFIG
+    env var), so they survive a service restart with the same id/state
+    instead of only existing after POST /api/senders/ with a random
+    uuid4(). Written/kept in sync by dcstranscode/scripts/make-mxl-config.py's
+    new --nmos-senders-config flag (ic-server monorepo, not this repo).
+  * systemd unit now sets DC_MXL_SENDERS_CONFIG (default
+    /etc/nmos-connection/senders.json) so the above actually gets picked
+    up by the real deployed service, not just a manually-launched one.
+
+ -- Evertz DreamCatcher <ichvets@evertz.com>  Wed, 02 Sep 2026 00:00:00 +0000
+
+nmos-device-connection-management (2.2.9+mxl1-6) unstable; urgency=low
+
+  * Fix addMxlSenderToIS05() crashing on real hosts: getAvailableInterfaces()
+    can return addresses addInterface()'s IPv4/IPv6 validation rejects
+    (e.g. IPv6 link-local with a %zone-id suffix) - skip unusable ones
+    instead of failing sender creation outright.
+
+ -- Evertz DreamCatcher <ichvets@evertz.com>  Wed, 02 Sep 2026 00:00:00 +0000
+
+nmos-device-connection-management (2.2.9+mxl1-5) unstable; urgency=low
+
+  * Add DcMxlSender (nmosconnection/dcMxlSender.py): mxl senders now use
+    it instead of the plain MxlSender, so GET .../active/ reflects a real
+    disk check of the domain directory (mxl_enabled true/false based on
+    whether <domain>/<flow_id>.mxl-flow/flow_def.json actually exists;
+    available_flows lists what's really there when no flow_id is staged
+    yet) instead of purely reflecting in-memory state. mxl-fabrics-proxy
+    itself stays statically configured - not queried directly.
+  * nmosDriver.py's addMxlSenderToIS05 now registers real local
+    interfaces (getAvailableInterfaces()) instead of the demo-only
+    generateRandomUnicast(), so source_ip's "auto" resolution reflects a
+    real interface on this host.
+
+ -- Evertz DreamCatcher <ichvets@evertz.com>  Wed, 02 Sep 2026 00:00:00 +0000
+
+nmos-device-connection-management (2.2.9+mxl1-4) unstable; urgency=low
+
+  * Fix activator.py's _getCurrentTime(): Timestamp.from_utc() no longer
+    exists in modern mediatimestamp - use the plain Timestamp(secs, nanos)
+    constructor instead, matching _scheduleAbsolute()'s own convention in
+    the same file. Pre-existing bug affecting activation for every
+    transport type, not just mxl (nmoscommon's own strict
+    mediatimestamp<2.0.0 pin is what the code was actually written
+    against; we're running mediatimestamp 5.2.0).
+
+ -- Evertz DreamCatcher <ichvets@evertz.com>  Wed, 02 Sep 2026 00:00:00 +0000
+
+nmos-device-connection-management (2.2.9+mxl1-3) unstable; urgency=low
+
+  * Point the systemd unit's ExecStart at a dedicated venv
+    (/opt/dreamcatcher/venv/nmos-connection-management, set up by
+    install.sh with --system-site-packages) instead of the system Python
+    - nmoscommon needs werkzeug<1.0.0 (BaseResponse, removed in modern
+    Werkzeug) which can't coexist with the system's dpkg-managed
+    python3-werkzeug/python3-flask.
+
+ -- Evertz DreamCatcher <ichvets@evertz.com>  Wed, 02 Sep 2026 00:00:00 +0000
+
+nmos-device-connection-management (2.2.9+mxl1-2) unstable; urgency=low
+
+  * Drop python3-nmoscommon/python3-mediatimestamp/python3-nodefacade from
+    Depends: - they're PyPI-only packages (setup.py's own
+    install_requires), never real apt packages under any name, so dpkg
+    could never treat them as satisfied. Install via pip separately.
+
+ -- Evertz DreamCatcher <ichvets@evertz.com>  Wed, 02 Sep 2026 00:00:00 +0000
+
+nmos-device-connection-management (2.2.9+mxl1-1) unstable; urgency=low
+
+  * Add MXL sender/receiver transport support (mxlSender.py, mxlReceiver.py)
+  * Switch packaging from stdeb/py2dsc to plain debhelper (stdeb is broken
+    on Python 3.12 - SafeConfigParser was removed from configparser)
+
+ -- Evertz DreamCatcher <ichvets@evertz.com>  Wed, 02 Sep 2026 00:00:00 +0000

@@ -1,0 +1,17 @@
+Source: nmos-device-connection-management
+Section: dreamcatcher
+Priority: optional
+Maintainer: Evertz DreamCatcher <ichvets@evertz.com>
+Build-Depends: debhelper (>= 11)
+Standards-Version: 3.8.3
+
+Package: nmos-device-connection-management
+Architecture: all
+Depends: ${misc:Depends}, python3, python3-pip, python3-flask, python3-jsonschema, python3-gevent, python3-netifaces, python3-requests, python3-six
+Description: AMWA IS-05 NMOS Device Connection Management reference implementation, with MXL sender/receiver transport support added
+ nmoscommon, mediatimestamp, and nodefacade (setup.py's own
+ install_requires) are PyPI-only packages, not apt packages under any
+ name - dpkg can never treat them as satisfied, so they are deliberately
+ NOT listed here. Install them after this package with:
+ .
+   sudo pip3 install --break-system-packages nmoscommon mediatimestamp nodefacade

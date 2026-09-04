@@ -65,7 +65,7 @@ NMOS IS-04/05 reference implementation.",
         # Remove device from registry
         self.facade.delResource("device", self.deviceId)
 
-    def makeReceiverData(self, receiverId):
+    def makeReceiverData(self, receiverId, transport="urn:x-nmos:transport:rtp"):
         interface = self.getInterface()
         receiverData = {
             "id": receiverId,
@@ -81,7 +81,7 @@ NMOS IS-04/05 reference implementation.",
                 "sender_id": None,
                 "active": False
             },
-            "transport": "urn:x-nmos:transport:rtp",
+            "transport": transport,
             "interface_bindings": [interface],
             "device_id": self.deviceId,
             "max_api_version": "v1.2"
@@ -92,9 +92,9 @@ NMOS IS-04/05 reference implementation.",
         timeNow = ptptime.ptp_detail()
         self.receivers[receiverId]['version'] = "{}:{}".format(repr(timeNow[0]), repr(timeNow[1]))
 
-    def registerReceiver(self, receiverId):
+    def registerReceiver(self, receiverId, transport="urn:x-nmos:transport:rtp"):
         # Register receiver
-        receiverData = self.makeReceiverData(receiverId)
+        receiverData = self.makeReceiverData(receiverId, transport)
         self.receivers[receiverId] = receiverData
         self.updateReceiverVersion(receiverId)
         self.deviceData['receivers'].append(receiverId)
@@ -224,7 +224,7 @@ reference implementation.",
         except IndexError:
             return interfaces[0]
 
-    def makeSenderData(self, senderId, flowId):
+    def makeSenderData(self, senderId, flowId, transport="urn:x-nmos:transport:rtp"):
         interface = self.getInterface()
         senderData = {
             "id": senderId,
@@ -233,7 +233,7 @@ reference implementation.",
 reference implementation.",
             "tags": {},
             "flow_id": flowId,
-            "transport": "urn:x-nmos:transport:rtp",
+            "transport": transport,
             "device_id": self.deviceId,
             "manifest_href": "http://localhost:8080/x-nmos/connection/v1.0/\
 single/senders/{}/transportfile/".format(senderId),
@@ -246,10 +246,10 @@ single/senders/{}/transportfile/".format(senderId),
         }
         return senderData
 
-    def registerSender(self, senderId, flowId):
+    def registerSender(self, senderId, flowId, transport="urn:x-nmos:transport:rtp"):
         # Register sender
         self.deviceData['senders'].append(senderId)
-        senderData = self.makeSenderData(senderId, flowId)
+        senderData = self.makeSenderData(senderId, flowId, transport)
         self.senders[senderId] = senderData
         self.updateSenderVersion(senderId)
         self.facade.addResource("sender", senderId, senderData)
