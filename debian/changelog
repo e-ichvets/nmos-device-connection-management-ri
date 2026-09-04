@@ -1,5 +1,10 @@
-nmos-device-connection-management (2.2.9+mxl1-9) unstable; urgency=low
+nmos-dcm (2.2.9+mxl1-9) unstable; urgency=low
 
+  * Package (and its systemd unit) renamed from
+    nmos-device-connection-management to nmos-dcm - shorter to type in
+    systemctl/journalctl commands day to day. The vendored upstream repo
+    directory itself (thirdparty/nmos/nmos-device-connection-management-ri/)
+    keeps its original name - this rename is packaging-only.
   * A PATCH clearing a receiver's mxl_domain_id/mxl_flow_id back to null
     (removing a stream) is now handled as the reverse of the activation
     sync: _onReceiverActivated() remembers the (endpoint, domain_id,
@@ -160,7 +165,7 @@ nmos-device-connection-management (2.2.9+mxl1-9) unstable; urgency=low
 
  -- Evertz DreamCatcher <ichvets@evertz.com>  Thu, 03 Sep 2026 00:00:00 +0000
 
-nmos-device-connection-management (2.2.9+mxl1-8) unstable; urgency=low
+nmos-dcm (2.2.9+mxl1-8) unstable; urgency=low
 
   * getAvailableInterfaces() now excludes loopback ("lo") - it was being
     registered first (netifaces.interfaces() lists it first on Linux),
@@ -169,7 +174,7 @@ nmos-device-connection-management (2.2.9+mxl1-8) unstable; urgency=low
 
  -- Evertz DreamCatcher <ichvets@evertz.com>  Wed, 02 Sep 2026 00:00:00 +0000
 
-nmos-device-connection-management (2.2.9+mxl1-7) unstable; urgency=low
+nmos-dcm (2.2.9+mxl1-7) unstable; urgency=low
 
   * nmosDriver.py: bootstrap fixed-id, pre-staged, pre-activated mxl
     senders from a static JSON config at startup (DC_MXL_SENDERS_CONFIG
@@ -183,7 +188,7 @@ nmos-device-connection-management (2.2.9+mxl1-7) unstable; urgency=low
 
  -- Evertz DreamCatcher <ichvets@evertz.com>  Wed, 02 Sep 2026 00:00:00 +0000
 
-nmos-device-connection-management (2.2.9+mxl1-6) unstable; urgency=low
+nmos-dcm (2.2.9+mxl1-6) unstable; urgency=low
 
   * Fix addMxlSenderToIS05() crashing on real hosts: getAvailableInterfaces()
     can return addresses addInterface()'s IPv4/IPv6 validation rejects
@@ -192,7 +197,7 @@ nmos-device-connection-management (2.2.9+mxl1-6) unstable; urgency=low
 
  -- Evertz DreamCatcher <ichvets@evertz.com>  Wed, 02 Sep 2026 00:00:00 +0000
 
-nmos-device-connection-management (2.2.9+mxl1-5) unstable; urgency=low
+nmos-dcm (2.2.9+mxl1-5) unstable; urgency=low
 
   * Add DcMxlSender (nmosconnection/dcMxlSender.py): mxl senders now use
     it instead of the plain MxlSender, so GET .../active/ reflects a real
@@ -208,7 +213,7 @@ nmos-device-connection-management (2.2.9+mxl1-5) unstable; urgency=low
 
  -- Evertz DreamCatcher <ichvets@evertz.com>  Wed, 02 Sep 2026 00:00:00 +0000
 
-nmos-device-connection-management (2.2.9+mxl1-4) unstable; urgency=low
+nmos-dcm (2.2.9+mxl1-4) unstable; urgency=low
 
   * Fix activator.py's _getCurrentTime(): Timestamp.from_utc() no longer
     exists in modern mediatimestamp - use the plain Timestamp(secs, nanos)
@@ -220,7 +225,7 @@ nmos-device-connection-management (2.2.9+mxl1-4) unstable; urgency=low
 
  -- Evertz DreamCatcher <ichvets@evertz.com>  Wed, 02 Sep 2026 00:00:00 +0000
 
-nmos-device-connection-management (2.2.9+mxl1-3) unstable; urgency=low
+nmos-dcm (2.2.9+mxl1-3) unstable; urgency=low
 
   * Point the systemd unit's ExecStart at a dedicated venv
     (/opt/dreamcatcher/venv/nmos-connection-management, set up by
@@ -231,7 +236,7 @@ nmos-device-connection-management (2.2.9+mxl1-3) unstable; urgency=low
 
  -- Evertz DreamCatcher <ichvets@evertz.com>  Wed, 02 Sep 2026 00:00:00 +0000
 
-nmos-device-connection-management (2.2.9+mxl1-2) unstable; urgency=low
+nmos-dcm (2.2.9+mxl1-2) unstable; urgency=low
 
   * Drop python3-nmoscommon/python3-mediatimestamp/python3-nodefacade from
     Depends: - they're PyPI-only packages (setup.py's own
@@ -240,7 +245,7 @@ nmos-device-connection-management (2.2.9+mxl1-2) unstable; urgency=low
 
  -- Evertz DreamCatcher <ichvets@evertz.com>  Wed, 02 Sep 2026 00:00:00 +0000
 
-nmos-device-connection-management (2.2.9+mxl1-1) unstable; urgency=low
+nmos-dcm (2.2.9+mxl1-1) unstable; urgency=low
 
   * Add MXL sender/receiver transport support (mxlSender.py, mxlReceiver.py)
   * Switch packaging from stdeb/py2dsc to plain debhelper (stdeb is broken

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Installs the nmos-device-connection-management .deb (built by
+# Installs the nmos-dcm .deb (built by
 # build-deb.sh) on a target box, then sets up a dedicated venv for its
 # Python dependencies instead of fighting the system Python:
 #

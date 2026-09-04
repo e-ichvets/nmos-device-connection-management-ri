@@ -5,4 +5,4 @@ debhelper-build-stamp
 files
 *.substvars
 *.debhelper
-nmos-device-connection-management/
+nmos-dcm/
