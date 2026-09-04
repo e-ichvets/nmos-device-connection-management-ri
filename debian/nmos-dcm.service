@@ -11,7 +11,7 @@ RestartSec=3
 # make-mxl-config.py's own --nmos-senders-config flag, which writes/keeps
 # it in sync. A missing file is not an error - just no static senders
 # pre-created that run.
-Environment=DC_MXL_SENDERS_CONFIG=/etc/nmos-connection/senders.json
+Environment=DC_MXL_SENDERS_CONFIG=/etc/nmos-dcm/senders.json
 # Static, fixed-id mxl receivers bootstrapped at startup from this file -
 # pure topology (which local dcstranscode input each receiver feeds,
 # which remote NMOS endpoint(s) it might pull from), hand-provisioned by
@@ -19,7 +19,7 @@ Environment=DC_MXL_SENDERS_CONFIG=/etc/nmos-connection/senders.json
 # receiver's own mxl_domain_id/mxl_flow_id only ever arrive via a real
 # PATCH). See dcMxlDriver.py's own DC_MXL_RECEIVERS_CONFIG_ENV comment
 # for the exact shape.
-Environment=DC_MXL_RECEIVERS_CONFIG=/etc/nmos-connection/receivers.json
+Environment=DC_MXL_RECEIVERS_CONFIG=/etc/nmos-dcm/receivers.json
 # Where a receiver activation's automatic mxl-fabrics-proxy subscription
 # sync (dcMxlDriver.py's _onReceiverActivated()) reads/writes, and its
 # admin API for POST /v1/reload - all optional. DC_MXL_FABRICS_PROXY_CONFIG

@@ -5,6 +5,11 @@ nmos-dcm (2.2.9+mxl1-9) unstable; urgency=low
     systemctl/journalctl commands day to day. The vendored upstream repo
     directory itself (thirdparty/nmos/nmos-device-connection-management-ri/)
     keeps its original name - this rename is packaging-only.
+  * DC_MXL_SENDERS_CONFIG/DC_MXL_RECEIVERS_CONFIG's own defaults move from
+    /etc/nmos-connection/ to /etc/nmos-dcm/, matching the package rename
+    above - senders.json/receivers.json already provisioned under the old
+    path on a deployed box need to be moved there by hand before
+    restarting on the new version, nothing does that automatically.
   * A PATCH clearing a receiver's mxl_domain_id/mxl_flow_id back to null
     (removing a stream) is now handled as the reverse of the activation
     sync: _onReceiverActivated() remembers the (endpoint, domain_id,
