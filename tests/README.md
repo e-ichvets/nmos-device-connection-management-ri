@@ -11,7 +11,7 @@ API layer (`api.py`, `nmosDriver.py`, `service.py`), so they need the real
 `nmoscommon` package - which itself needs an old `werkzeug`/`flask` pin
 chain that doesn't `pip install` cleanly against a modern Python. Where
 that's already set up (a venv built by `install.sh`, e.g. on a deployed
-box under `/opt/dreamcatcher/venv/nmos-connection-management`):
+box under `/opt/dreamcatcher/venv/nmos-dcm`):
 
 ```sh
 <venv>/bin/python3 -m unittest discover -s . -v

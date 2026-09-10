@@ -40,7 +40,7 @@
 set -euo pipefail
 
 DEB_FILE="${1:?usage: install.sh <path-to-deb>}"
-VENV_DIR="/opt/dreamcatcher/venv/nmos-connection-management"
+VENV_DIR="/opt/dreamcatcher/venv/nmos-dcm"
 
 sudo dpkg -i "$DEB_FILE"
 sudo apt-get install -y -f

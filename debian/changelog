@@ -20,6 +20,12 @@ nmos-dcm (2.2.9+mxl1-9) unstable; urgency=low
     _receiverActiveFlow's own bookkeeping is in-memory only) could keep
     winning over whichever flow was actually just patched, regardless of
     _switchReceiver() above.
+  * addReceiverFromConfig() now rejects (logged, not fatal to the rest of
+    the bootstrap) any DC_MXL_RECEIVERS_CONFIG entry whose endpoints have
+    no protocol="mxl" entry at all - this file only ever bootstraps mxl
+    receivers, and such an entry could never be synced by
+    _onReceiverActivated() anyway, so it's better rejected up front than
+    silently created as a real, permanently-unusable MxlReceiver.
   * Package (and its systemd unit) renamed from
     nmos-device-connection-management to nmos-dcm - shorter to type in
     systemctl/journalctl commands day to day. The vendored upstream repo
@@ -30,6 +36,12 @@ nmos-dcm (2.2.9+mxl1-9) unstable; urgency=low
     above - senders.json/receivers.json already provisioned under the old
     path on a deployed box need to be moved there by hand before
     restarting on the new version, nothing does that automatically.
+  * install.sh's own venv moves from /opt/dreamcatcher/venv/
+    nmos-connection-management to /opt/dreamcatcher/venv/nmos-dcm,
+    matching the same rename - the systemd unit's ExecStart now points at
+    the new path too. A box with an existing venv under the old path
+    needs install.sh re-run (or the venv moved by hand) before this
+    version's unit will actually find its interpreter.
   * A PATCH clearing a receiver's mxl_domain_id/mxl_flow_id back to null
     (removing a stream) is now handled as the reverse of the activation
     sync: _onReceiverActivated() remembers the (endpoint, domain_id,

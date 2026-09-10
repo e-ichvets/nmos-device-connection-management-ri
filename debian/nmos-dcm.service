@@ -38,7 +38,7 @@ Environment=DC_MXL_RECEIVERS_CONFIG=/etc/nmos-dcm/receivers.json
 # it still sees this package's own nmosconnection module) - its Python
 # deps aren't installable directly against the system Python, see
 # install.sh's own top-of-file comment for the full story.
-ExecStart=/opt/dreamcatcher/venv/nmos-connection-management/bin/python3 /usr/bin/connectionmanagement
+ExecStart=/opt/dreamcatcher/venv/nmos-dcm/bin/python3 /usr/bin/connectionmanagement
 
 [Install]
 WantedBy=multi-user.target
