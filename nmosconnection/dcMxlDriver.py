@@ -170,10 +170,21 @@ class DcMxlDriver:
                 bootstrapped, len(receivers_by_id), DC_MXL_RECEIVERS_CONFIG_ENV, config_path))
 
     def addReceiverFromConfig(self, receiverId, entry):
+        endpoints = entry.get('endpoints', [])
+        if not any(e.get('protocol') == 'mxl' for e in endpoints):
+            # DC_MXL_RECEIVERS_CONFIG_ENV only ever bootstraps mxl
+            # receivers (this whole file's purpose) - an entry with no
+            # protocol="mxl" endpoint at all can never be synced by
+            # _onReceiverActivated() either way, so reject it here rather
+            # than creating a real IS-04/IS-05 receiver resource that can
+            # never do anything useful.
+            raise ValueError(
+                "no protocol=\"mxl\" endpoint in its own endpoints list - "
+                "{} only bootstraps mxl receivers".format(DC_MXL_RECEIVERS_CONFIG_ENV))
         legs = entry.get('leg', 1)
         self._receiverTopology[receiverId] = {
             'input': entry.get('input'),
-            'endpoints': entry.get('endpoints', []),
+            'endpoints': endpoints,
         }
         self.addReceiverToIS05(legs, receiverId)
 
@@ -219,13 +230,23 @@ class DcMxlDriver:
         true at bootstrap time, since those aren't pre-staged anymore)."""
         topology = self._receiverTopology.get(receiverId)
         if not topology:
+            self.logger.writeDebug(
+                "Receiver {} activated but has no static topology in {} - "
+                "not an mxl receiver DcMxlDriver manages, ignoring".format(
+                    receiverId, DC_MXL_RECEIVERS_CONFIG_ENV))
             return
         try:
             leg_params = receiver.activeToJson()[__tp__][0]
-        except (KeyError, IndexError):
+        except (KeyError, IndexError) as e:
+            self.logger.writeWarning(
+                "Receiver {} activated but its active transport_params could not be "
+                "read: {}".format(receiverId, e))
             return
         domain_id = leg_params.get('mxl_domain_id')
         flow_id = leg_params.get('mxl_flow_id')
+        self.logger.writeDebug(
+            "Receiver {} activated with mxl_domain_id={} mxl_flow_id={}".format(
+                receiverId, domain_id, flow_id))
         if not domain_id or not flow_id:
             # A PATCH clearing mxl_domain_id/mxl_flow_id back to null means
             # this stream is being removed - reverse whatever this
@@ -234,8 +255,14 @@ class DcMxlDriver:
             # synced (e.g. the very first, still-null bootstrap activation).
             previous = self._receiverActiveFlow.pop(receiverId, None)
             if previous is None:
+                self.logger.writeDebug(
+                    "Receiver {} activated with no mxl_domain_id/mxl_flow_id and "
+                    "nothing previously synced - nothing to do".format(receiverId))
                 return
             endpoint, prev_domain_id, prev_flow_id = previous
+            self.logger.writeDebug(
+                "Receiver {} cleared - unsyncing previous domain_id={} flow_id={}".format(
+                    receiverId, prev_domain_id, prev_flow_id))
             threading.Thread(
                 target=self._unsyncReceiver,
                 args=(receiverId, endpoint, prev_domain_id, prev_flow_id, topology.get('input')),
@@ -253,12 +280,40 @@ class DcMxlDriver:
                 "Receiver {} activated with a real flow but has no mxl-protocol "
                 "endpoint configured in {}".format(receiverId, DC_MXL_RECEIVERS_CONFIG_ENV))
             return
+        previous = self._receiverActiveFlow.get(receiverId)
         self._receiverActiveFlow[receiverId] = (endpoints[0], domain_id, flow_id)
+        self.logger.writeDebug(
+            "Receiver {} syncing endpoint={} domain_id={} flow_id={} input={}".format(
+                receiverId, endpoints[0], domain_id, flow_id, topology.get('input')))
         threading.Thread(
-            target=self._syncReceiver,
-            args=(receiverId, endpoints[0], domain_id, flow_id, topology.get('input')),
+            target=self._switchReceiver,
+            args=(receiverId, endpoints[0], domain_id, flow_id, topology.get('input'), previous),
             daemon=True,
         ).start()
+
+    def _switchReceiver(self, receiverId, endpoint, domain_id, flow_id, input_index, previous):
+        """Runs off the request-handling thread, same as _syncReceiver()/
+        _unsyncReceiver() below. A direct A -> B (or A -> B -> A) re-patch
+        never goes through the null/removal branch _onReceiverActivated()
+        otherwise handles, so without this, the previous flow's own
+        mxl-fabrics-proxy subscription entry and its symlink under the
+        input's flow-config dir are simply left behind - they accumulate
+        rather than being replaced, and _detectFlowsUnderInput() then keeps
+        resolving to whichever flow-id string sorts first rather than
+        whichever was just patched. Unsyncing the previous flow first
+        (sequentially, not as a second parallel thread) before syncing the
+        new one keeps exactly one flow of each essence type on disk at a
+        time, matching what a real switch should do."""
+        if previous is not None:
+            prev_endpoint, prev_domain_id, prev_flow_id = previous
+            if (prev_domain_id, prev_flow_id) != (domain_id, flow_id):
+                self.logger.writeDebug(
+                    "Receiver {}: switching away from previous domain_id={} "
+                    "flow_id={} - unsyncing it first".format(
+                        receiverId, prev_domain_id, prev_flow_id))
+                self._unsyncReceiver(
+                    receiverId, prev_endpoint, prev_domain_id, prev_flow_id, input_index)
+        self._syncReceiver(receiverId, endpoint, domain_id, flow_id, input_index)
 
     def _syncReceiver(self, receiverId, endpoint, domain_id, flow_id, input_index):
         """Runs off the request-handling thread so a PATCH response is
@@ -381,13 +436,21 @@ class DcMxlDriver:
         essence types were found among <flow_config_dir>'s own flow-uuid
         symlinks (each one _linkFlowIntoInput() created, possibly across
         several receiver activations; config.json - written after this
-        runs - is skipped by name) - the first flow of each type wins; a
-        second flow of the same type is silently ignored rather than
-        blocking."""
+        runs - is skipped by name) - ordered by each symlink's own mtime,
+        most-recently-linked first, so the most recently activated flow of
+        a given essence type wins; any older one (e.g. a stale symlink
+        _switchReceiver() didn't know to remove - it only unwinds a flow
+        this same process instance previously synced itself, so anything
+        left over from before an nmos-dcm restart, or from outside this
+        driver entirely, is invisible to it) is silently ignored rather
+        than blocking. Deliberately NOT sorted by name (the flow uuids
+        themselves) - that has nothing to do with recency and made this
+        depend on unrelated, arbitrary uuid values."""
+        candidates = [p for p in Path(flow_config_dir).iterdir()
+                      if p.name != "config.json" and p.is_file()]
+        candidates.sort(key=lambda p: p.lstat().st_mtime, reverse=True)
         found = {}
-        for flow_def_path in sorted(Path(flow_config_dir).iterdir()):
-            if flow_def_path.name == "config.json" or not flow_def_path.is_file():
-                continue
+        for flow_def_path in candidates:
             try:
                 flow_def = json.loads(flow_def_path.read_text())
             except (ValueError, OSError):

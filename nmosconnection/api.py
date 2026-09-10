@@ -239,6 +239,8 @@ class ConnectionManagementAPI(WebAPI):
 
     def staged_patch(self, api_version, transceiverType, transceiverId, params):
         toReturn = {}
+        self.logger.writeDebug(
+            "PATCH staged {} {}: {}".format(transceiverType, transceiverId, params))
         transceiver = self.validateAPIVersion(api_version, transceiverType, transceiverId)
         try:
             self.validateAgainstSchema(params, 'v1.0-{}-stage-schema.json'.format(transceiverType[:-1]))

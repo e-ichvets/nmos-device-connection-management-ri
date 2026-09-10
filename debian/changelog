@@ -1,5 +1,25 @@
 nmos-dcm (2.2.9+mxl1-9) unstable; urgency=low
 
+  * staged_patch() and _onReceiverActivated() now log every step of a
+    receiver PATCH (the incoming request, why an activation was a no-op
+    - no static topology, unreadable transport_params, nothing to
+      reverse on a null-clear - and the mxl_domain_id/mxl_flow_id it
+      actually saw), instead of several of those paths silently
+      returning with no trace at all.
+  * A direct receiver PATCH from one real flow straight to another (no
+    null step in between) no longer leaves the old flow's
+    mxl-fabrics-proxy subscription entry and its symlink under the
+    input's flow config dir behind indefinitely - _onReceiverActivated()
+    now hands the previously-synced (endpoint, domain_id, flow_id) to
+    the new _switchReceiver(), which unsyncs it before syncing the new
+    one whenever the two differ.
+  * _detectFlowsUnderInput() now picks the most-recently-linked flow of
+    each essence type (by symlink mtime) instead of whichever flow uuid
+    happens to sort first alphabetically - the previous ordering meant a
+    stale symlink (e.g. one surviving an nmos-dcm restart, since
+    _receiverActiveFlow's own bookkeeping is in-memory only) could keep
+    winning over whichever flow was actually just patched, regardless of
+    _switchReceiver() above.
   * Package (and its systemd unit) renamed from
     nmos-device-connection-management to nmos-dcm - shorter to type in
     systemctl/journalctl commands day to day. The vendored upstream repo
